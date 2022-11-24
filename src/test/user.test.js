@@ -53,7 +53,7 @@ describe("Testes rota POST /users", () => {
     expect(response.body).toHaveProperty("createdOn");
     expect(response.body).toHaveProperty("updatedOn");
     expect(response.body).toHaveProperty("uuid");
-    expect(response.body).toHaveProperty("isAdm");
+    expect(response.body).toHaveProperty("uuid");
     expect(response.body).not.toHaveProperty("password");
 
   });
