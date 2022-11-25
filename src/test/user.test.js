@@ -1,7 +1,7 @@
+import * as bcrypt from "bcryptjs";
 import request from "supertest";
 import app from "../app";
 import users from "../database";
-import * as bcrypt from "bcryptjs";
 
 const userAdm = {
   name: "felipe",
@@ -22,7 +22,7 @@ const userNotAdm = {
   password: bcrypt.hashSync("123456", 8),
   isAdm: false,
   createdOn: "2022-11-17T11:42:25.262Z",
-  updatedOn: "2022-11-17T11:42:25.262Z"
+  updatedOn: "2022-11-17T11:42:25.262Z",
 };
 
 const loginNotAdm = {
@@ -30,9 +30,9 @@ const loginNotAdm = {
   password: "123456",
 };
 
-let tokenAdm = ""
+let tokenAdm = "";
 
-let tokenNotAdm = ""
+let tokenNotAdm = "";
 
 users.push({
   uuid: "2a577c94-bd28-480d-a20e-cc401e3a259e",
@@ -40,13 +40,13 @@ users.push({
   email: "fabio@kenzie.com",
   password: bcrypt.hashSync("123456", 8),
   isAdm: true,
-})
-users.push(userNotAdm)
+});
+users.push(userNotAdm);
 
 describe("Testes rota POST /users", () => {
   test("Testando criação de usuário com um corpo correto", async () => {
     const response = await request(app).post("/users").send(userAdm);
-    
+
     expect(response.status).toBe(201);
     expect(response.body).toHaveProperty("name");
     expect(response.body).toHaveProperty("email");
@@ -55,7 +55,6 @@ describe("Testes rota POST /users", () => {
     expect(response.body).toHaveProperty("uuid");
     expect(response.body).toHaveProperty("uuid");
     expect(response.body).not.toHaveProperty("password");
-
   });
 
   test("Testando criação de usuário com e-mail já utilizado", async () => {
@@ -75,8 +74,8 @@ describe("Testando rota POST /login", () => {
     expect(typeof response.body.token).toBe("string");
 
     const notAdmLogin = await request(app).post("/login").send(loginNotAdm);
-    tokenNotAdm = notAdmLogin.body.token
-    tokenAdm = response.body.token
+    tokenNotAdm = notAdmLogin.body.token;
+    tokenAdm = response.body.token;
   });
 
   test("Testando login inválido", async () => {
@@ -116,7 +115,7 @@ describe("Testando rota GET /users", () => {
 });
 
 describe("Testando rota GET /users/profile", () => {
-  test("Testando listagem do perfil de usuário", async () => { 
+  test("Testando listagem do perfil de usuário", async () => {
     const response = await request(app)
       .get("/users/profile")
       .set("Authorization", `Bearer ${tokenNotAdm}`);
@@ -158,12 +157,11 @@ describe("Testando rota PATCH /users/<uuid>", () => {
     expect(response.body).toHaveProperty("message");
   });
 
-  test("Testando atualização do próprio usuário sem permissão de ADM", async () => { 
+  test("Testando atualização do próprio usuário sem permissão de ADM", async () => {
     const response = await request(app)
       .patch(`/users/8643c029-04f9-448c-9b9b-630ad89db8b3`)
       .send(updateNotAdm)
       .set("Authorization", `Bearer ${tokenNotAdm}`);
-
     expect(response.body).toHaveProperty("uuid");
     expect(response.body).toHaveProperty("createdOn");
     expect(response.body).toHaveProperty("updatedOn");
@@ -195,7 +193,9 @@ describe("Testando rota PATCH /users/<uuid>", () => {
 
 describe("Testando rota DELETE /users/<uuid>", () => {
   test("Testando deleção sem token", async () => {
-    const response = await request(app).delete(`/users/2a577c94-bd28-480d-a20e-cc401e3a259e`);
+    const response = await request(app).delete(
+      `/users/2a577c94-bd28-480d-a20e-cc401e3a259e`
+    );
 
     expect(response.status).toBe(401);
     expect(response.body).toHaveProperty("message");
@@ -219,7 +219,6 @@ describe("Testando rota DELETE /users/<uuid>", () => {
   });
 
   test("Testando deleção do próprio usuário", async () => {
-
     const response = await request(app)
       .delete(`/users/2a577c94-bd28-480d-a20e-cc401e3a259e`)
       .set("Authorization", `Bearer ${tokenAdm}`);

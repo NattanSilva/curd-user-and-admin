@@ -1,4 +1,4 @@
-import { hash, compare } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import "dotenv/config";
 import express from "express";
 import jwt from "jsonwebtoken";
@@ -9,32 +9,45 @@ const app = express();
 app.use(express.json());
 
 // Controllers //
-export const createUserContoller = async (request, response) => {
+const createUserContoller = async (request, response) => {
   const [status, data] = await createUserService(request.body);
 
   return response.status(status).json(data);
 };
 
-export const loginUserControler = (request, response) => {
+const loginUserControler = (request, response) => {
   const [status, token] = loginUserService(request.body);
 
   return response.status(status).json(token);
 };
 
-export const getUserDataController = (request, response) => {
+const getUserDataController = (request, response) => {
   const [status, data] = getUserDataService(request);
 
   return response.status(status).json(data);
 };
+
 const listUsersController = (request, response) => {
   const [status, list] = listUsersService();
 
   return response.status(status).json(list);
 };
 
+const actualizeDataController = async (request, response) => {
+  const [status, userData] = await actualizeDataService(request);
+
+  return response.status(status).json(userData);
+};
+
+const deleteUserController = (request, response) => {
+  const [status, data] = deleteUserService(request);
+
+  return response.status(status).json(data);
+};
+
 // Services //
 
-export const createUserService = async ({ name, email, password, isAdm }) => {
+const createUserService = async ({ name, email, password, isAdm }) => {
   const hashedPassword = await hash(password, 10);
 
   const newUser = {
@@ -51,7 +64,7 @@ export const createUserService = async ({ name, email, password, isAdm }) => {
   return [201, newUser];
 };
 
-export const loginUserService = ({ email }) => {
+const loginUserService = ({ email }) => {
   const currentUser = users.find((user) => user.email === email);
 
   const token = jwt.sign({ email }, "SECRET_KEY", {
@@ -62,23 +75,73 @@ export const loginUserService = ({ email }) => {
   return [200, { token }];
 };
 
-export const getUserDataService = (request) => {
+const getUserDataService = (request) => {
   const authToken = request.headers.authorization.split(" ")[1];
-  const { email } = jwt.decode(authToken);
-  const user = users.find((regist) => regist.email === email);
+  const { email: currentEmail } = jwt.decode(authToken);
+  const user = users.find((regist) => regist.email === currentEmail);
 
-  delete user.password;
+  const { uuid, name, email, createdOn, updatedOn, isAdm } = user;
 
-  return [200, user];
+  return [200, { uuid, name, email, createdOn, updatedOn, isAdm }];
 };
 
-export const listUsersService = () => {
+const listUsersService = () => {
   return [200, users];
 };
 
+const actualizeDataService = async (request) => {
+  const { body, headers, params } = request;
+  const authToken = headers.authorization.split(" ")[1];
+  const paramsId = params.uuid;
+  const { email: userEmail } = jwt.decode(authToken);
+  const currentUser = users.find((regist) => regist.email === userEmail);
+  const userToUpdate = users.find((regist) => regist.uuid === paramsId);
+
+  if (currentUser.isAdm || currentUser.uuid === paramsId) {
+    for (let key in userToUpdate) {
+      if (body.password) {
+        userToUpdate.password = await hash(body.password, 10);
+      } else if (key === "isAdm") {
+        continue;
+      } else if (userToUpdate[key] !== body[key] && body[key] !== undefined) {
+        userToUpdate[key] = body[key];
+      }
+    }
+
+    userToUpdate.updatedOn = new Date();
+
+    const userData = { ...userToUpdate };
+    delete userData.password;
+    return [200, userData];
+  } else {
+    return [403, { message: "missing admin permissions" }];
+  }
+};
+
+const deleteUserService = (request) => {
+  const { headers, params } = request;
+  const authToken = headers.authorization.split(" ")[1];
+  const paramsId = params.uuid;
+  const { email: userEmail } = jwt.decode(authToken);
+  const currentUser = users.find((regist) => regist.email === userEmail);
+
+  if (currentUser.isAdm || currentUser.uuid === paramsId) {
+    const userIndex = users.findIndex((regist) => regist.uuid === paramsId);
+
+    if (userIndex === -1) {
+      return [403, { message: "User not found" }];
+    }
+
+    users.splice(userIndex, 1);
+
+    return [204, {}];
+  } else {
+    return [403, { message: "missing admin permissions" }];
+  }
+};
 // Middlewares //
 
-export const verifyEmailRegistredMiddleware = (request, response, next) => {
+const verifyEmailRegistredMiddleware = (request, response, next) => {
   const { email } = request.body;
   const emailAlreadyRegistred = users.find((regist) => regist.email === email);
 
@@ -89,7 +152,7 @@ export const verifyEmailRegistredMiddleware = (request, response, next) => {
   return next();
 };
 
-export const verifyuserExistsMiddleware = (request, response, next) => {
+const verifyUserExistsMiddleware = (request, response, next) => {
   const { email } = request.body;
   const userExists = users.find((regist) => regist.email === email);
 
@@ -100,11 +163,7 @@ export const verifyuserExistsMiddleware = (request, response, next) => {
   return next();
 };
 
-export const verifyPasswordMatchMiddleware = async (
-  request,
-  response,
-  next
-) => {
+const verifyPasswordMatchMiddleware = async (request, response, next) => {
   const { email, password } = request.body;
 
   const currentUser = users.find((user) => user.email === email);
@@ -117,8 +176,8 @@ export const verifyPasswordMatchMiddleware = async (
   return next();
 };
 
-export const verifyTokenMiddleware = (request, response, next) => {
-  const authToken = request.headers.authorization.split(" ")[1];
+const verifyTokenMiddleware = (request, response, next) => {
+  const authToken = request.headers.authorization;
 
   if (!authToken) {
     return response
@@ -126,18 +185,24 @@ export const verifyTokenMiddleware = (request, response, next) => {
       .json({ message: "Missing authorization headers" });
   }
 
-  jwt.verify(authToken, "SECRET_KEY", (error, decoded) => {
+  const token = authToken.split(" ")[1];
+
+  if (!token) {
+    return response
+      .status(401)
+      .json({ message: "Missing authorization headers" });
+  }
+
+  jwt.verify(token, "SECRET_KEY", (error, decoded) => {
     if (error) {
       return response.status(401).json({ message: error.message });
     }
 
     return next();
   });
-
-  return next();
 };
 
-export const verifyIsAdminMiddleware = (request, response, next) => {
+const verifyIsAdminMiddleware = (request, response, next) => {
   const authToken = request.headers.authorization.split(" ")[1];
   const { email } = jwt.decode(authToken);
   const user = users.find((regist) => regist.email === email);
@@ -149,11 +214,13 @@ export const verifyIsAdminMiddleware = (request, response, next) => {
   return next();
 };
 
+// Routes //
+
 app.post("/users", verifyEmailRegistredMiddleware, createUserContoller);
 
 app.post(
   "/login",
-  verifyuserExistsMiddleware,
+  verifyUserExistsMiddleware,
   verifyPasswordMatchMiddleware,
   loginUserControler
 );
@@ -166,6 +233,10 @@ app.get(
 );
 
 app.get("/users/profile", verifyTokenMiddleware, getUserDataController);
+
+app.patch("/users/:uuid", verifyTokenMiddleware, actualizeDataController);
+
+app.delete("/users/:uuid", verifyTokenMiddleware, deleteUserController);
 
 app.listen(process.env.PORT, () =>
   console.log(`App is running at http://localhost:${process.env.PORT}`)
