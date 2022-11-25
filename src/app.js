@@ -8,6 +8,9 @@ import users from "./database";
 const app = express();
 app.use(express.json());
 
+const PORT = process.env.PORT;
+const SECRET_KEY = process.env.SECRET_KEY;
+
 // Controllers //
 const createUserContoller = async (request, response) => {
   const [status, data] = await createUserService(request.body);
@@ -67,7 +70,7 @@ const createUserService = async ({ name, email, password, isAdm }) => {
 const loginUserService = ({ email }) => {
   const currentUser = users.find((user) => user.email === email);
 
-  const token = jwt.sign({ email }, "SECRET_KEY", {
+  const token = jwt.sign({ email }, SECRET_KEY, {
     expiresIn: "24h",
     subject: currentUser.uuid,
   });
@@ -95,27 +98,19 @@ const actualizeDataService = async (request) => {
   const paramsId = params.uuid;
   const { email: userEmail } = jwt.decode(authToken);
   const currentUser = users.find((regist) => regist.email === userEmail);
-  const userToUpdate = users.find((regist) => regist.uuid === paramsId);
+  let userToUpdate = users.find((regist) => regist.uuid === paramsId);
 
-  if (currentUser.isAdm || currentUser.uuid === paramsId) {
-    for (let key in userToUpdate) {
-      if (body.password) {
-        userToUpdate.password = await hash(body.password, 10);
-      } else if (key === "isAdm") {
-        continue;
-      } else if (userToUpdate[key] !== body[key] && body[key] !== undefined) {
-        userToUpdate[key] = body[key];
-      }
-    }
-
-    userToUpdate.updatedOn = new Date();
-
-    const userData = { ...userToUpdate };
-    delete userData.password;
-    return [200, userData];
-  } else {
+  if (!currentUser.isAdm && currentUser.uuid !== paramsId) {
     return [403, { message: "missing admin permissions" }];
   }
+
+  userToUpdate = { ...userToUpdate, ...body };
+  userToUpdate.updatedOn = new Date();
+
+  const userData = { ...userToUpdate };
+  delete userData.password;
+
+  return [200, userData];
 };
 
 const deleteUserService = (request) => {
@@ -193,7 +188,7 @@ const verifyTokenMiddleware = (request, response, next) => {
       .json({ message: "Missing authorization headers" });
   }
 
-  jwt.verify(token, "SECRET_KEY", (error, decoded) => {
+  jwt.verify(token, SECRET_KEY, (error, decoded) => {
     if (error) {
       return response.status(401).json({ message: error.message });
     }
@@ -238,8 +233,8 @@ app.patch("/users/:uuid", verifyTokenMiddleware, actualizeDataController);
 
 app.delete("/users/:uuid", verifyTokenMiddleware, deleteUserController);
 
-app.listen(process.env.PORT, () =>
-  console.log(`App is running at http://localhost:${process.env.PORT}`)
+app.listen(PORT, () =>
+  console.log(`App is running at http://localhost:${PORT}`)
 );
 
 export default app;
