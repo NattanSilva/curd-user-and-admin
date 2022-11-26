@@ -25,7 +25,7 @@ const loginUserControler = (request, response) => {
 };
 
 const getUserDataController = (request, response) => {
-  const [status, data] = getUserDataService(request);
+  const [status, data] = getUserDataService(request.headers.authorization);
 
   return response.status(status).json(data);
 };
@@ -37,13 +37,16 @@ const listUsersController = (request, response) => {
 };
 
 const actualizeDataController = async (request, response) => {
-  const [status, userData] = await actualizeDataService(request);
+  const [status, userData] = await actualizeDataService(
+    request.body,
+    request.params.uuid
+  );
 
   return response.status(status).json(userData);
 };
 
 const deleteUserController = (request, response) => {
-  const [status, data] = deleteUserService(request);
+  const [status, data] = deleteUserService(request.params.uuid);
 
   return response.status(status).json(data);
 };
@@ -78,9 +81,9 @@ const loginUserService = ({ email }) => {
   return [200, { token }];
 };
 
-const getUserDataService = (request) => {
-  const authToken = request.headers.authorization.split(" ")[1];
-  const { email: currentEmail } = jwt.decode(authToken);
+const getUserDataService = (authToken) => {
+  const token = authToken.split(" ")[1];
+  const { email: currentEmail } = jwt.decode(token);
   const user = users.find((regist) => regist.email === currentEmail);
 
   const { uuid, name, email, createdOn, updatedOn, isAdm } = user;
@@ -92,17 +95,8 @@ const listUsersService = () => {
   return [200, users];
 };
 
-const actualizeDataService = async (request) => {
-  const { body, headers, params } = request;
-  const authToken = headers.authorization.split(" ")[1];
-  const paramsId = params.uuid;
-  const { email: userEmail } = jwt.decode(authToken);
-  const currentUser = users.find((regist) => regist.email === userEmail);
+const actualizeDataService = async (body, paramsId) => {
   let userToUpdate = users.find((regist) => regist.uuid === paramsId);
-
-  if (!currentUser.isAdm && currentUser.uuid !== paramsId) {
-    return [403, { message: "missing admin permissions" }];
-  }
 
   userToUpdate = { ...userToUpdate, ...body };
   userToUpdate.updatedOn = new Date();
@@ -113,27 +107,18 @@ const actualizeDataService = async (request) => {
   return [200, userData];
 };
 
-const deleteUserService = (request) => {
-  const { headers, params } = request;
-  const authToken = headers.authorization.split(" ")[1];
-  const paramsId = params.uuid;
-  const { email: userEmail } = jwt.decode(authToken);
-  const currentUser = users.find((regist) => regist.email === userEmail);
+const deleteUserService = (paramsId) => {
+  const userIndex = users.findIndex((regist) => regist.uuid === paramsId);
 
-  if (currentUser.isAdm || currentUser.uuid === paramsId) {
-    const userIndex = users.findIndex((regist) => regist.uuid === paramsId);
-
-    if (userIndex === -1) {
-      return [403, { message: "User not found" }];
-    }
-
-    users.splice(userIndex, 1);
-
-    return [204, {}];
-  } else {
-    return [403, { message: "missing admin permissions" }];
+  if (userIndex === -1) {
+    return [404, { message: "User not found" }];
   }
+
+  users.splice(userIndex, 1);
+
+  return [204, {}];
 };
+
 // Middlewares //
 
 const verifyEmailRegistredMiddleware = (request, response, next) => {
@@ -182,12 +167,6 @@ const verifyTokenMiddleware = (request, response, next) => {
 
   const token = authToken.split(" ")[1];
 
-  if (!token) {
-    return response
-      .status(401)
-      .json({ message: "Missing authorization headers" });
-  }
-
   jwt.verify(token, SECRET_KEY, (error, decoded) => {
     if (error) {
       return response.status(401).json({ message: error.message });
@@ -209,6 +188,18 @@ const verifyIsAdminMiddleware = (request, response, next) => {
   return next();
 };
 
+const verifyUserPermissionsMiddleware = (request, response, next) => {
+  const token = request.headers.authorization.split(" ")[1];
+  const paramsId = request.params.uuid;
+  const { email: currentEmail } = jwt.decode(token);
+  const currentUser = users.find((regist) => regist.email === currentEmail);
+
+  if (!currentUser.isAdm && currentUser.uuid !== paramsId) {
+    return response.status(403).json({ message: "missing admin permissions" });
+  }
+
+  return next();
+};
 // Routes //
 
 app.post("/users", verifyEmailRegistredMiddleware, createUserContoller);
@@ -229,9 +220,19 @@ app.get(
 
 app.get("/users/profile", verifyTokenMiddleware, getUserDataController);
 
-app.patch("/users/:uuid", verifyTokenMiddleware, actualizeDataController);
+app.patch(
+  "/users/:uuid",
+  verifyTokenMiddleware,
+  verifyUserPermissionsMiddleware,
+  actualizeDataController
+);
 
-app.delete("/users/:uuid", verifyTokenMiddleware, deleteUserController);
+app.delete(
+  "/users/:uuid",
+  verifyTokenMiddleware,
+  verifyUserPermissionsMiddleware,
+  deleteUserController
+);
 
 app.listen(PORT, () =>
   console.log(`App is running at http://localhost:${PORT}`)
